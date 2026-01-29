@@ -1,7 +1,8 @@
 import express from 'express';
 import ChatSession from '../models/ChatSession';
+import ChatMessage from '../models/ChatMessage';
 import Ticket from '../models/Ticket';
-import { authenticate, AuthRequest } from '../middleware/auth';
+import { authenticate, AuthRequest, blockMemberWrite } from '../middleware/auth';
 import { body, validationResult } from 'express-validator';
 
 const router = express.Router();
@@ -9,6 +10,7 @@ const router = express.Router();
 // Create chat session
 router.post('/session', [
   authenticate,
+  blockMemberWrite,
   body('type').isIn(['chat', 'voice', 'video'])
 ], async (req: AuthRequest, res) => {
   try {
@@ -50,6 +52,10 @@ router.get('/sessions', authenticate, async (req: AuthRequest, res) => {
 
     if (req.user?.role === 'customer') {
       query.customerId = req.user.id;
+    } else if (req.user?.role === 'member') {
+      // Members can view family/shared sessions (read-only)
+      // For now, allow viewing all active sessions (can be refined with family relationships)
+      query.customerId = req.user.id; // Members see their own family's sessions
     } else if (req.user?.role === 'agent') {
       query.agentId = req.user.id;
     }
@@ -66,10 +72,76 @@ router.get('/sessions', authenticate, async (req: AuthRequest, res) => {
   }
 });
 
-// Join session (agent)
-router.post('/session/:id/join', [authenticate], async (req: AuthRequest, res) => {
+// Get chat messages for a session
+router.get('/session/:id/messages', authenticate, async (req: AuthRequest, res) => {
   try {
-    if (req.user?.role === 'customer') {
+    const session = await ChatSession.findById(req.params.id);
+    if (!session) {
+      return res.status(404).json({ error: 'Session not found' });
+    }
+
+    // Check permissions
+    if (req.user?.role === 'customer' && session.customerId.toString() !== req.user.id) {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+
+    const messages = await ChatMessage.find({ sessionId: req.params.id })
+      .sort({ createdAt: 1 });
+
+    res.json(messages);
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Send chat message
+router.post('/session/:id/message', [
+  authenticate,
+  blockMemberWrite,
+  body('content').trim().notEmpty()
+], async (req: AuthRequest, res) => {
+  try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({ errors: errors.array() });
+    }
+
+    const session = await ChatSession.findById(req.params.id);
+    if (!session) {
+      return res.status(404).json({ error: 'Session not found' });
+    }
+
+    // Check permissions
+    if (req.user?.role === 'customer' && session.customerId.toString() !== req.user.id) {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+
+    const { content } = req.body;
+
+    const chatMessage = new ChatMessage({
+      sessionId: req.params.id,
+      senderId: req.user!.id,
+      senderName: req.user!.email, // Will be populated from user
+      senderRole: req.user!.role,
+      content
+    });
+
+    await chatMessage.save();
+
+    // Populate sender info
+    const populatedMessage = await ChatMessage.findById(chatMessage._id)
+      .populate('senderId', 'name email');
+
+    res.status(201).json(populatedMessage);
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Join session (agent)
+router.post('/session/:id/join', [authenticate, blockMemberWrite], async (req: AuthRequest, res) => {
+  try {
+    if (req.user?.role === 'customer' || req.user?.role === 'member') {
       return res.status(403).json({ error: 'Only agents can join sessions' });
     }
 
@@ -98,7 +170,7 @@ router.post('/session/:id/join', [authenticate], async (req: AuthRequest, res) =
 });
 
 // End session
-router.post('/session/:id/end', authenticate, async (req: AuthRequest, res) => {
+router.post('/session/:id/end', [authenticate, blockMemberWrite], async (req: AuthRequest, res) => {
   try {
     const session = await ChatSession.findById(req.params.id);
     if (!session) {

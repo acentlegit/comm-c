@@ -1,8 +1,12 @@
 import { useState, useEffect } from 'react';
 import Layout from '../components/Layout';
 import TicketCard from '../components/TicketCard';
+import ChatWindow from '../components/ChatWindow';
+import VoiceCall from '../components/VoiceCall';
+import VideoCall from '../components/VideoCall';
 import api from '../utils/api';
 import { getSocket } from '../utils/socket';
+import { useAuth } from '../context/AuthContext';
 
 interface Ticket {
   _id: string;
@@ -21,6 +25,10 @@ export default function Customer() {
   const [activeSessions, setActiveSessions] = useState<any[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [filterStatus, setFilterStatus] = useState<string>('all');
+  const [activeChat, setActiveChat] = useState<string | null>(null);
+  const [activeVoiceCall, setActiveVoiceCall] = useState<{ sessionId: string; roomName: string } | null>(null);
+  const [activeVideoCall, setActiveVideoCall] = useState<{ sessionId: string; roomName: string } | null>(null);
+  const { user } = useAuth();
 
   useEffect(() => {
     fetchTickets();
@@ -63,9 +71,20 @@ export default function Customer() {
 
   const handleStartChat = async (type: 'chat' | 'voice' | 'video') => {
     try {
-      await api.post('/chat/session', { type });
+      const response = await api.post('/chat/session', { type });
+      const session = response.data;
+      const sessionId = session._id || session.id;
+      const roomName = `room-${sessionId}`;
+
+      if (type === 'chat') {
+        setActiveChat(sessionId);
+      } else if (type === 'voice') {
+        setActiveVoiceCall({ sessionId, roomName });
+      } else if (type === 'video') {
+        setActiveVideoCall({ sessionId, roomName });
+      }
+
       await fetchActiveSessions();
-      alert(`${type.charAt(0).toUpperCase() + type.slice(1)} session created! Waiting for agent...`);
     } catch (error: any) {
       alert(error.response?.data?.error || 'Failed to start session');
     }
@@ -110,40 +129,51 @@ export default function Customer() {
     <Layout>
       <div className="mb-6 flex justify-between items-center">
         <h1 className="text-3xl font-bold text-brand-title">Customer Support</h1>
-        <button
-          onClick={() => window.open('http://ticket-tracker-dev.s3-website-us-east-1.amazonaws.com', '_blank')}
-          className="px-6 py-2 bg-brand-primary text-white rounded-lg hover:bg-brand-primaryHover transition shadow-sm"
-        >
-          Create Ticket
-        </button>
+        {user?.role !== 'member' && (
+          <button
+            onClick={() => window.open('http://ticket-tracker-dev.s3-website-us-east-1.amazonaws.com', '_blank')}
+            className="px-6 py-2 bg-brand-primary text-white rounded-lg hover:bg-brand-primaryHover transition shadow-sm"
+          >
+            Create Ticket
+          </button>
+        )}
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-8">
-        <button
-          onClick={() => handleStartChat('chat')}
-          className="p-6 bg-brand-cardBg rounded-2xl shadow hover:shadow-lg transition text-left border border-brand-border"
-        >
-          <div className="text-4xl mb-2">💬</div>
-          <h3 className="font-semibold text-lg mb-1 text-brand-body">Chat Support</h3>
-          <p className="text-sm text-brand-muted">Start a text chat with an agent</p>
-        </button>
-        <button
-          onClick={() => handleStartChat('voice')}
-          className="p-6 bg-brand-cardBg rounded-2xl shadow hover:shadow-lg transition text-left border border-brand-border"
-        >
-          <div className="text-4xl mb-2">📞</div>
-          <h3 className="font-semibold text-lg mb-1 text-brand-body">Voice Call</h3>
-          <p className="text-sm text-brand-muted">Connect via voice call</p>
-        </button>
-        <button
-          onClick={() => handleStartChat('video')}
-          className="p-6 bg-brand-cardBg rounded-2xl shadow hover:shadow-lg transition text-left border border-brand-border"
-        >
-          <div className="text-4xl mb-2">📹</div>
-          <h3 className="font-semibold text-lg mb-1 text-brand-body">Video Call</h3>
-          <p className="text-sm text-brand-muted">Start a video call session</p>
-        </button>
-      </div>
+      {user?.role !== 'member' && (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-8">
+          <button
+            onClick={() => handleStartChat('chat')}
+            className="p-6 bg-brand-cardBg rounded-2xl shadow hover:shadow-lg transition text-left border border-brand-border"
+          >
+            <div className="text-4xl mb-2">💬</div>
+            <h3 className="font-semibold text-lg mb-1 text-brand-body">Chat Support</h3>
+            <p className="text-sm text-brand-muted">Start a text chat with an agent</p>
+          </button>
+          <button
+            onClick={() => handleStartChat('voice')}
+            className="p-6 bg-brand-cardBg rounded-2xl shadow hover:shadow-lg transition text-left border border-brand-border"
+          >
+            <div className="text-4xl mb-2">📞</div>
+            <h3 className="font-semibold text-lg mb-1 text-brand-body">Voice Call</h3>
+            <p className="text-sm text-brand-muted">Connect via voice call</p>
+          </button>
+          <button
+            onClick={() => handleStartChat('video')}
+            className="p-6 bg-brand-cardBg rounded-2xl shadow hover:shadow-lg transition text-left border border-brand-border"
+          >
+            <div className="text-4xl mb-2">📹</div>
+            <h3 className="font-semibold text-lg mb-1 text-brand-body">Video Call</h3>
+            <p className="text-sm text-brand-muted">Start a video call session</p>
+          </button>
+        </div>
+      )}
+      {user?.role === 'member' && (
+        <div className="mb-6 bg-brand-primarySoft p-4 rounded-lg border border-brand-border">
+          <p className="text-sm text-brand-body">
+            <strong>Read-only Mode:</strong> As a Member, you can view content but cannot create tickets or start support sessions.
+          </p>
+        </div>
+      )}
 
       {/* Stats Cards */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
@@ -220,6 +250,32 @@ export default function Customer() {
           </div>
         )}
       </div>
+
+      {/* Chat Window */}
+      {activeChat && (
+        <ChatWindow
+          sessionId={activeChat}
+          onClose={() => setActiveChat(null)}
+        />
+      )}
+
+      {/* Voice Call */}
+      {activeVoiceCall && (
+        <VoiceCall
+          sessionId={activeVoiceCall.sessionId}
+          roomName={activeVoiceCall.roomName}
+          onClose={() => setActiveVoiceCall(null)}
+        />
+      )}
+
+      {/* Video Call */}
+      {activeVideoCall && (
+        <VideoCall
+          sessionId={activeVideoCall.sessionId}
+          roomName={activeVideoCall.roomName}
+          onClose={() => setActiveVideoCall(null)}
+        />
+      )}
 
     </Layout>
   );

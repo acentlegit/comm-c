@@ -16,6 +16,7 @@ import analyticsRoutes from './routes/analytics';
 import chatRoutes from './routes/chat';
 import secureUsersRoutes from './routes/secureUsers';
 import usersRoutes from './routes/users';
+import livekitRoutes from './routes/livekit';
 
 const app = express();
 const server = http.createServer(app);
@@ -45,6 +46,7 @@ app.use('/api/analytics', analyticsRoutes);
 app.use('/api/chat', chatRoutes);
 app.use('/api/secure/users', secureUsersRoutes);
 app.use('/api/users', usersRoutes);
+app.use('/api/livekit', livekitRoutes);
 
 // Socket.io for real-time communication
 io.on('connection', (socket) => {
@@ -76,14 +78,39 @@ io.on('connection', (socket) => {
   // Chat session events
   socket.on('chat:join', (sessionId: string) => {
     socket.join(`chat:${sessionId}`);
+    console.log(`Socket ${socket.id} joined chat:${sessionId}`);
   });
 
   socket.on('chat:leave', (sessionId: string) => {
     socket.leave(`chat:${sessionId}`);
+    console.log(`Socket ${socket.id} left chat:${sessionId}`);
   });
 
-  socket.on('chat:message', (data: { sessionId: string; message: any }) => {
-    io.to(`chat:${data.sessionId}`).emit('chat:message', data.message);
+  socket.on('chat:message', async (data: { sessionId: string; message: any }) => {
+    try {
+      // Save message to database
+      const ChatMessageModel = (await import('./models/ChatMessage')).default;
+      const chatMessage = new ChatMessageModel({
+        sessionId: data.sessionId,
+        senderId: data.message.senderId,
+        senderName: data.message.senderName,
+        senderRole: data.message.senderRole,
+        content: data.message.content
+      });
+      await chatMessage.save();
+
+      // Broadcast to all participants in the session
+      io.to(`chat:${data.sessionId}`).emit('chat:message', {
+        ...data.message,
+        _id: chatMessage._id,
+        createdAt: chatMessage.createdAt
+      });
+      console.log(`Message saved and sent to chat:${data.sessionId}`);
+    } catch (error) {
+      console.error('Error saving chat message:', error);
+      // Still broadcast even if save fails
+      io.to(`chat:${data.sessionId}`).emit('chat:message', data.message);
+    }
   });
 
   socket.on('disconnect', () => {

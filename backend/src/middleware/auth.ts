@@ -51,3 +51,13 @@ export const requireScope = (scope: string) => {
     next();
   };
 };
+
+// Block write operations for Member (Read-only) role
+export const blockMemberWrite = (req: AuthRequest, res: Response, next: NextFunction) => {
+  if (req.user?.role === 'member') {
+    return res.status(403).json({ 
+      error: 'Read-only access. Members cannot perform write operations.' 
+    });
+  }
+  next();
+};

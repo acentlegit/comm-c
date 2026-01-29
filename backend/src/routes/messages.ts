@@ -1,7 +1,7 @@
 import express from 'express';
 import Message from '../models/Message';
 import Ticket from '../models/Ticket';
-import { authenticate, AuthRequest } from '../middleware/auth';
+import { authenticate, AuthRequest, blockMemberWrite } from '../middleware/auth';
 import { body, validationResult } from 'express-validator';
 
 const router = express.Router();
@@ -32,6 +32,7 @@ router.get('/ticket/:ticketId', authenticate, async (req: AuthRequest, res) => {
 // Send message
 router.post('/', [
   authenticate,
+  blockMemberWrite,
   body('ticketId').notEmpty(),
   body('content').trim().notEmpty()
 ], async (req: AuthRequest, res) => {

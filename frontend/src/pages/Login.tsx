@@ -118,15 +118,16 @@ export default function Login() {
                 <label className="block text-sm font-medium text-brand-body mb-1">
                   Role
                 </label>
-                <select
-                  value={role}
-                  onChange={(e) => setRole(e.target.value)}
-                  className="w-full px-4 py-2 border border-brand-border rounded-lg focus:ring-2 focus:ring-brand-primary focus:border-transparent"
-                >
-                  <option value="customer">Customer</option>
-                  <option value="agent">Agent</option>
-                  <option value="admin">Admin</option>
-                </select>
+                        <select
+                          value={role}
+                          onChange={(e) => setRole(e.target.value)}
+                          className="w-full px-4 py-2 border border-brand-border rounded-lg focus:ring-2 focus:ring-brand-primary focus:border-transparent"
+                        >
+                          <option value="customer">Customer</option>
+                          <option value="member">Member (Read-only)</option>
+                          <option value="agent">Agent</option>
+                          <option value="admin">Admin</option>
+                        </select>
               </div>
             </>
           )}

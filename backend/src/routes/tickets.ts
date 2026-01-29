@@ -1,7 +1,7 @@
 import express from 'express';
 import Ticket from '../models/Ticket';
 import Message from '../models/Message';
-import { authenticate, authorize, AuthRequest } from '../middleware/auth';
+import { authenticate, authorize, AuthRequest, blockMemberWrite } from '../middleware/auth';
 import { body, validationResult } from 'express-validator';
 
 const router = express.Router();
@@ -14,6 +14,10 @@ router.get('/', authenticate, async (req: AuthRequest, res) => {
 
     if (req.user?.role === 'customer') {
       query.customerId = req.user.id;
+    } else if (req.user?.role === 'member') {
+      // Members can view family/shared tickets (read-only)
+      // For now, allow viewing all tickets (can be refined with family relationships)
+      query.customerId = req.user.id; // Members see their own family's tickets
     }
     // Agents and Admins can see all tickets (no filter needed)
 
@@ -42,9 +46,16 @@ router.get('/:id', authenticate, async (req: AuthRequest, res) => {
       return res.status(404).json({ error: 'Ticket not found' });
     }
 
-    // Check permissions - customers can only see their own tickets
+    // Check permissions
     if (req.user?.role === 'customer' && ticket.customerId.toString() !== req.user.id) {
       return res.status(403).json({ error: 'Access denied' });
+    }
+    if (req.user?.role === 'member') {
+      // Members can view family/shared tickets (read-only)
+      // For now, allow viewing if it's their family's ticket
+      if (ticket.customerId.toString() !== req.user.id) {
+        return res.status(403).json({ error: 'Access denied' });
+      }
     }
     // Agents and admins can access any ticket (no additional check needed)
 
@@ -116,7 +127,7 @@ router.post('/', [
 });
 
 // Update ticket
-router.put('/:id', authenticate, async (req: AuthRequest, res) => {
+router.put('/:id', [authenticate, blockMemberWrite], async (req: AuthRequest, res) => {
   try {
     const ticket = await Ticket.findById(req.params.id);
     if (!ticket) {
